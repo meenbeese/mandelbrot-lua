@@ -69,7 +69,7 @@ end
 
 function love.update(dt)
     local moveAmount = panSpeed * zoom * baseHalfWidth * dt
-    local zoomSpeed = 0.05
+    local zoomSpeed = 1.05  -- Zoom 5% per zoom action
 
     isZoomingOrPanning = false
 
@@ -91,11 +91,11 @@ function love.update(dt)
     end
 
     if love.keyboard.isDown('z') then
-        zoom = zoom * (1 + zoomSpeed)
+        zoom = zoom * zoomSpeed
         isZoomingOrPanning = true
     end
     if love.keyboard.isDown('x') then
-        zoom = zoom / (1 + zoomSpeed)
+        zoom = zoom / zoomSpeed
         zoom = math.max(zoom, 1e-10)
         isZoomingOrPanning = true
     end
@@ -110,7 +110,7 @@ function love.draw()
     love.graphics.draw(mandelbrotImage, 0, 0)
     love.graphics.print("Center: (" .. string.format("%.5f", centerX) ..
                         ", " .. string.format("%.5f", centerY) .. ")", 10, 10)
-    love.graphics.print("Zoom: " .. string.format("%.5f", zoom), 10, 30)
+    love.graphics.print("Zoom: " .. string.format("%.10f", zoom), 10, 30)
     love.graphics.print("Max Iterations: " .. max_iter, 10, 50)
     love.graphics.print("Threads: " .. tostring(threadCount), 10, 70)
     love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), 10, 90)

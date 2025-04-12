@@ -35,28 +35,20 @@ typedef struct {
     uint8_t* pixels;
     int width;
     int height;
-    double centerX;
-    double centerY;
-    double zoom;
+    double xmin;
+    double xmax;
+    double ymin;
+    double ymax;
     int max_iter;
     int y_start;
     int y_end;
 } MandelbrotJob;
 
 static void compute_row_range(MandelbrotJob* job) {
-    double baseHalfWidth = 2.5;
-    double baseHalfHeight = 2.0;
-
-    double scale = job->zoom;
-    double xmin = job->centerX - baseHalfWidth * scale;
-    double xmax = job->centerX + baseHalfWidth * scale;
-    double ymin = job->centerY - baseHalfHeight * scale;
-    double ymax = job->centerY + baseHalfHeight * scale;
-
     for (int y = job->y_start; y < job->y_end; y++) {
         for (int x = 0; x < job->width; x++) {
-            double cr = xmin + (x / (double)job->width) * (xmax - xmin);
-            double ci = ymin + (y / (double)job->height) * (ymax - ymin);
+            double cr = job->xmin + (x / (double)job->width) * (job->xmax - job->xmin);
+            double ci = job->ymin + (y / (double)job->height) * (job->ymax - job->ymin);
 
             double zr = 0.0, zi = 0.0;
             double zr2 = 0.0, zi2 = 0.0;
@@ -113,6 +105,14 @@ void generate_mandelbrot(uint8_t* pixels, int width, int height,
                          int max_iter, int threads) {
     init_color_table(max_iter);
 
+    double baseHalfWidth = 2.5;
+    double baseHalfHeight = 2.0;
+    double scale = zoom;
+    double xmin = centerX - baseHalfWidth * scale;
+    double xmax = centerX + baseHalfWidth * scale;
+    double ymin = centerY - baseHalfHeight * scale;
+    double ymax = centerY + baseHalfHeight * scale;
+
     MandelbrotJob* jobs = (MandelbrotJob*)malloc(sizeof(MandelbrotJob) * threads);
     THREAD_HANDLE* handles = (THREAD_HANDLE*)malloc(sizeof(THREAD_HANDLE) * threads);
 
@@ -121,9 +121,10 @@ void generate_mandelbrot(uint8_t* pixels, int width, int height,
         jobs[i].pixels = pixels;
         jobs[i].width = width;
         jobs[i].height = height;
-        jobs[i].centerX = centerX;
-        jobs[i].centerY = centerY;
-        jobs[i].zoom = zoom;
+        jobs[i].xmin = xmin;
+        jobs[i].xmax = xmax;
+        jobs[i].ymin = ymin;
+        jobs[i].ymax = ymax;
         jobs[i].max_iter = max_iter;
         jobs[i].y_start = i * slice;
         jobs[i].y_end = (i == threads - 1) ? height : (i + 1) * slice;

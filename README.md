@@ -51,19 +51,19 @@ The project uses a native C function to speed up Mandelbrot rendering. You must 
 ### On Windows (MinGW or MSVC):
 
 ```sh
-gcc -O3 -shared -o mandelbrot.dll -fPIC mandelbrot.c
+gcc -O3 -funroll-loops -shared -o mandelbrot.dll -fPIC mandelbrot.c
 ```
 
 ### On Linux
 
 ```sh
-gcc -O3 -shared -o mandelbrot.so -fPIC mandelbrot.c
+gcc -O3 -funroll-loops -shared -o mandelbrot.so -fPIC mandelbrot.c
 ```
 
 ### On macOS
 
 ```sh
-gcc -O3 -shared -o mandelbrot.dylib -fPIC mandelbrot.c
+gcc -O3 -funroll-loops -shared -o mandelbrot.dylib -fPIC mandelbrot.c
 ```
 
 Make sure the resulting file is named exactly:
