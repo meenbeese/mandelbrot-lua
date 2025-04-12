@@ -1,3 +1,24 @@
+local ffi = require("ffi")
+
+ffi.cdef[[
+    void generate_mandelbrot(uint8_t* pixels, int width, int height,
+                             double centerX, double centerY,
+                             double zoom, int max_iter);
+]]
+
+local libname
+if jit.os == "Windows" then
+    libname = "mandelbrot.dll"
+elseif jit.os == "OSX" then
+    libname = "mandelbrot.dylib"
+else
+    libname = "mandelbrot.so"
+end
+
+local path = love.filesystem.getSource() .. "/" .. libname
+
+local mandelbrotLib = ffi.load(path)
+
 local width, height = 800, 600
 local max_iter = 100
 
@@ -23,33 +44,22 @@ function love.load()
 end
 
 function generateFrame()
-    local scale = zoom
-    local aspect = width / height
-    local xmin = centerX - baseHalfWidth * scale
-    local xmax = centerX + baseHalfWidth * scale
-    local ymin = centerY - baseHalfHeight * scale
-    local ymax = centerY + baseHalfHeight * scale
+    local pixelCount = width * height * 4
+    local buffer = ffi.new("uint8_t[?]", pixelCount)
+
+    mandelbrotLib.generate_mandelbrot(buffer, width, height, centerX, centerY, zoom, max_iter)
 
     for x = 0, width - 1 do
         for y = 0, height - 1 do
-            local cr = xmin + (x / width) * (xmax - xmin)
-            local ci = ymin + (y / height) * (ymax - ymin)
-            local zr, zi = 0, 0
-            local iter = 0
-            while (zr * zr + zi * zi < 4) and (iter < max_iter) do
-                local temp = zr * zr - zi * zi + cr
-                zi = 2 * zr * zi + ci
-                zr = temp
-                iter = iter + 1
-            end
-
-            local t = iter / max_iter
-            local r = 9 * (1 - t) * t^3 * 255
-            local g = 15 * (1 - t)^2 * t^2 * 255
-            local b = 8.5 * (1 - t)^3 * t * 255
-            imageData:setPixel(x, y, r / 255, g / 255, b / 255, 1)
+            local i = (y * width + x) * 4
+            local r = buffer[i] / 255
+            local g = buffer[i + 1] / 255
+            local b = buffer[i + 2] / 255
+            local a = buffer[i + 3] / 255
+            imageData:setPixel(x, y, r, g, b, a)
         end
     end
+
     mandelbrotImage:replacePixels(imageData)
 end
 
