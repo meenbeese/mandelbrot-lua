@@ -37,11 +37,15 @@ local imageData, mandelbrotImage
 
 local threadCount
 
+local shader
+
 function love.load()
     love.window.setMode(0, 0, { fullscreen = true })
     width, height = love.graphics.getDimensions()
 
     threadCount = mandelbrotLib.get_thread_count()
+
+    shader = love.graphics.newShader("shader.glsl")
 
     imageData = love.image.newImageData(width, height)
     mandelbrotImage = love.graphics.newImage(imageData)
@@ -107,7 +111,12 @@ function love.update(dt)
 end
 
 function love.draw()
+    shader:send("maxIter", max_iter)
+    love.graphics.setShader(shader)
     love.graphics.draw(mandelbrotImage, 0, 0)
+    love.graphics.setShader()
+
+    -- Overlay UI
     love.graphics.print("Center: (" .. string.format("%.5f", centerX) ..
                         ", " .. string.format("%.5f", centerY) .. ")", 10, 10)
     love.graphics.print("Zoom: " .. string.format("%.10f", zoom), 10, 30)

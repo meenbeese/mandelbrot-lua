@@ -70,9 +70,10 @@ static void compute_row_range(MandelbrotJob* job) {
             uint8_t b = color.b;
 
             int i = (y * job->width + x) * 4;
-            job->pixels[i + 0] = r;
-            job->pixels[i + 1] = g;
-            job->pixels[i + 2] = b;
+            uint8_t gray = (uint8_t)(((double)iter / job->max_iter) * 255);
+            job->pixels[i + 0] = gray;
+            job->pixels[i + 1] = gray;
+            job->pixels[i + 2] = gray;
             job->pixels[i + 3] = 255;
         }
     }

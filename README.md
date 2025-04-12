@@ -87,13 +87,16 @@ The Lua code will detect your OS and load the appropriate file automatically.
 
 ## Performance Optimizations
 
-This project includes several techniques to maximize performance during rendering:
+This project includes several key optimizations to ensure smooth, real-time Mandelbrot rendering:
 
-- **Native C backend:** All Mandelbrot calculations are offloaded to a compiled C shared library using LuaJIT FFI.
-- **Multithreaded computation:** The native C code computes image rows in parallel using multiple threads.
-- **Low-res render buffer:** Internally renders at window resolution and draws to screen as a texture for fast scaling.
-- **Dynamic max iterations:** Iteration count automatically increases with zoom for detailed rendering, but is clamped to prevent lag.
-- **No offscreen calculation:** The Mandelbrot code only processes pixels that are currently visible.
+- **Native C backend:** All Mandelbrot calculations are done in a compiled C shared library via LuaJIT FFI.
+- **Multithreaded computation:** Rows are processed in parallel using multiple threads (auto-detected at runtime).
+- **Loop unrolling:** Enabled via -funroll-loops during compilation for faster iteration performance.
+- **Cached bounds:** xmin, xmax, ymin, and ymax are calculated only when zoom or pan occurs.
+- **Dynamic max iterations:** Automatically increases with zoom level for visual detail, with clamping to avoid lag.
+- **Clamped zoom precision:** Prevents zoom from becoming too small due to floating-point limits.
+- **GLSL fragment shader coloring:** Coloring is handled entirely on the GPU for smooth gradients and zero CPU cost.
+- **GPU-accelerated texture rendering:** Fractal data is uploaded to a texture and drawn in one pass for efficiency.
 
 ---
 
