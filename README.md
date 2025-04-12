@@ -5,6 +5,14 @@ You can pan around and zoom into the fractal in real time with keyboard controls
 
 ---
 
+## Screenshots
+
+| ![screenshot_1](assets/screenshot_1.png) | ![screenshot_2](assets/screenshot_2.png) | ![screenshot_3](assets/screenshot_3.png) |
+|------------------------------------------|------------------------------------------|------------------------------------------|
+| ![screenshot_4](assets/screenshot_4.png) | ![screenshot_5](assets/screenshot_5.png) | ![screenshot_6](assets/screenshot_6.png) |
+
+---
+
 ## Controls
 
 | Key | Action           |
@@ -66,20 +74,33 @@ Make sure the resulting file is named exactly:
 
 The Lua code will detect your OS and load the appropriate file automatically.
 
+---
+
 ## Features
 
 - Full-screen rendering
 - Real-time panning and zooming
 - Dynamically adjusts iteration count for detail at high zoom
 - Colored smooth shading
-- Native C performance for pixel-perfect quality
+
+---
+
+## Performance Optimizations
+
+This project includes several techniques to maximize performance during rendering:
+
+- **Native C backend:** All Mandelbrot calculations are offloaded to a compiled C shared library using LuaJIT FFI.
+- **Multithreaded computation:** The native C code computes image rows in parallel using multiple threads.
+- **Low-res render buffer:** Internally renders at window resolution and draws to screen as a texture for fast scaling.
+- **Dynamic max iterations:** Iteration count automatically increases with zoom for detailed rendering, but is clamped to prevent lag.
+- **No offscreen calculation:** The Mandelbrot code only processes pixels that are currently visible.
 
 ---
 
 ## Requirements
 
 - [Love2D](https://love2d.org/) 11.0 or later
-- C compiler (only required if you want to build the native library yourself)
+- C compiler
 
 ---
 
