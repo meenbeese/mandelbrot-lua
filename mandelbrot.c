@@ -57,12 +57,16 @@ static void compute_row_range(MandelbrotJob* job) {
         for (int x = 0; x < job->width; x++) {
             double cr = xmin + (x / (double)job->width) * (xmax - xmin);
             double ci = ymin + (y / (double)job->height) * (ymax - ymin);
-            double zr = 0, zi = 0;
+
+            double zr = 0.0, zi = 0.0;
+            double zr2 = 0.0, zi2 = 0.0;
             int iter = 0;
-            while (zr * zr + zi * zi < 4 && iter < job->max_iter) {
-                double temp = zr * zr - zi * zi + cr;
-                zi = 2 * zr * zi + ci;
-                zr = temp;
+            while (zr2 + zi2 < 4.0 && iter < job->max_iter) {
+                zi = 2.0 * zr * zi + ci;
+                zr = zr2 - zi2 + cr;
+
+                zr2 = zr * zr;
+                zi2 = zi * zi;
                 iter++;
             }
 
