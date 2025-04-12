@@ -49,18 +49,17 @@ function generateFrame()
 
     mandelbrotLib.generate_mandelbrot(buffer, width, height, centerX, centerY, zoom, max_iter)
 
-    for x = 0, width - 1 do
-        for y = 0, height - 1 do
-            local i = (y * width + x) * 4
-            local r = buffer[i] / 255
-            local g = buffer[i + 1] / 255
-            local b = buffer[i + 2] / 255
-            local a = buffer[i + 3] / 255
-            imageData:setPixel(x, y, r, g, b, a)
-        end
-    end
+    local pixelPtr = imageData:getFFIPointer()
+    ffi.copy(pixelPtr, buffer, pixelCount)
 
     mandelbrotImage:replacePixels(imageData)
+end
+
+local function computeIterations()
+    local safeZoom = math.max(zoom, 1e-10)
+    local calculated = 100 + math.floor(-math.log(safeZoom) * 50)
+    local limit = zoom > 1 and 300 or 2000  -- cap for zoomed-out
+    return math.max(50, math.min(calculated, limit))
 end
 
 function love.update(dt)
@@ -92,11 +91,12 @@ function love.update(dt)
     end
     if love.keyboard.isDown('x') then
         zoom = zoom / (1 + zoomSpeed)
+        zoom = math.max(zoom, 1e-10)
         isZoomingOrPanning = true
     end
 
     if isZoomingOrPanning then
-        max_iter = 100 + math.floor(-math.log(zoom) * 50)
+        max_iter = computeIterations()
         generateFrame()
     end
 end
@@ -107,6 +107,7 @@ function love.draw()
                         ", " .. string.format("%.5f", centerY) .. ")", 10, 10)
     love.graphics.print("Zoom: " .. string.format("%.5f", zoom), 10, 30)
     love.graphics.print("Max Iterations: " .. max_iter, 10, 50)
+    love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), 10, 70)
 end
 
 function love.keypressed(key)
