@@ -72,11 +72,21 @@ THREAD_RETURN thread_func(void* arg) {
 }
 #endif
 
+int get_thread_count() {
+#if defined(_WIN32)
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    return sysinfo.dwNumberOfProcessors;
+#else
+    return (int)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+}
+
 void generate_mandelbrot(uint8_t* pixels, int width, int height,
-                         double centerX, double centerY, double zoom, int max_iter) {
-    int threads = 4;
-    MandelbrotJob jobs[4];
-    THREAD_HANDLE handles[4];
+                         double centerX, double centerY, double zoom,
+                         int max_iter, int threads) {
+    MandelbrotJob* jobs = (MandelbrotJob*)malloc(sizeof(MandelbrotJob) * threads);
+    THREAD_HANDLE* handles = (THREAD_HANDLE*)malloc(sizeof(THREAD_HANDLE) * threads);
 
     int slice = height / threads;
     for (int i = 0; i < threads; i++) {
@@ -105,4 +115,7 @@ void generate_mandelbrot(uint8_t* pixels, int width, int height,
         pthread_join(handles[i], NULL);
 #endif
     }
+
+    free(jobs);
+    free(handles);
 }

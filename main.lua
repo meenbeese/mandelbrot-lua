@@ -2,8 +2,9 @@ local ffi = require("ffi")
 
 ffi.cdef[[
     void generate_mandelbrot(uint8_t* pixels, int width, int height,
-                             double centerX, double centerY,
-                             double zoom, int max_iter);
+                             double centerX, double centerY, double zoom,
+                             int max_iter, int threads);
+    int get_thread_count();
 ]]
 
 local libname
@@ -34,9 +35,13 @@ local isZoomingOrPanning = false
 
 local imageData, mandelbrotImage
 
+local threadCount
+
 function love.load()
     love.window.setMode(0, 0, { fullscreen = true })
     width, height = love.graphics.getDimensions()
+
+    threadCount = mandelbrotLib.get_thread_count()
 
     imageData = love.image.newImageData(width, height)
     mandelbrotImage = love.graphics.newImage(imageData)
@@ -47,7 +52,7 @@ function generateFrame()
     local pixelCount = width * height * 4
     local buffer = ffi.new("uint8_t[?]", pixelCount)
 
-    mandelbrotLib.generate_mandelbrot(buffer, width, height, centerX, centerY, zoom, max_iter)
+    mandelbrotLib.generate_mandelbrot(buffer, width, height, centerX, centerY, zoom, max_iter, threadCount)
 
     local pixelPtr = imageData:getFFIPointer()
     ffi.copy(pixelPtr, buffer, pixelCount)
@@ -107,7 +112,8 @@ function love.draw()
                         ", " .. string.format("%.5f", centerY) .. ")", 10, 10)
     love.graphics.print("Zoom: " .. string.format("%.5f", zoom), 10, 30)
     love.graphics.print("Max Iterations: " .. max_iter, 10, 50)
-    love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), 10, 70)
+    love.graphics.print("Threads: " .. tostring(threadCount), 10, 70)
+    love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), 10, 90)
 end
 
 function love.keypressed(key)
