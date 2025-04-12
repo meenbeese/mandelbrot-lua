@@ -30,7 +30,7 @@ local baseHalfHeight = 2.0
 
 -- Control speeds
 local panSpeed = 1.0
-local zoomSpeedFactor = 0.98
+local isZoomingOrPanning = false
 
 local imageData, mandelbrotImage
 
@@ -65,30 +65,40 @@ end
 
 function love.update(dt)
     local moveAmount = panSpeed * zoom * baseHalfWidth * dt
+    local zoomSpeed = 0.05
+
+    isZoomingOrPanning = false
 
     if love.keyboard.isDown('w') then
         centerY = centerY - moveAmount
+        isZoomingOrPanning = true
     end
     if love.keyboard.isDown('s') then
         centerY = centerY + moveAmount
+        isZoomingOrPanning = true
     end
     if love.keyboard.isDown('a') then
         centerX = centerX - moveAmount
+        isZoomingOrPanning = true
     end
     if love.keyboard.isDown('d') then
         centerX = centerX + moveAmount
+        isZoomingOrPanning = true
     end
 
     if love.keyboard.isDown('z') then
-        zoom = zoom * zoomSpeedFactor
+        zoom = zoom * (1 + zoomSpeed)
+        isZoomingOrPanning = true
     end
     if love.keyboard.isDown('x') then
-        zoom = zoom / zoomSpeedFactor
+        zoom = zoom / (1 + zoomSpeed)
+        isZoomingOrPanning = true
     end
 
-    max_iter = 100 + math.floor(-math.log(zoom) * 50)
-
-    generateFrame()
+    if isZoomingOrPanning then
+        max_iter = 100 + math.floor(-math.log(zoom) * 50)
+        generateFrame()
+    end
 end
 
 function love.draw()
