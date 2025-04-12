@@ -11,6 +11,26 @@
     #define THREAD_HANDLE pthread_t
 #endif
 
+#define COLOR_TABLE_SIZE 1024
+
+typedef struct {
+    uint8_t r, g, b;
+} Color;
+
+static Color color_table[COLOR_TABLE_SIZE];
+
+void init_color_table(int max_iter) {
+    for (int i = 0; i < COLOR_TABLE_SIZE; i++) {
+        double t = (double)i / (COLOR_TABLE_SIZE - 1);
+        uint8_t r = (uint8_t)(9 * (1 - t) * t * t * t * 255);
+        uint8_t g = (uint8_t)(15 * (1 - t) * (1 - t) * t * t * 255);
+        uint8_t b = (uint8_t)(8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
+        color_table[i].r = r;
+        color_table[i].g = g;
+        color_table[i].b = b;
+    }
+}
+
 typedef struct {
     uint8_t* pixels;
     int width;
@@ -46,10 +66,12 @@ static void compute_row_range(MandelbrotJob* job) {
                 iter++;
             }
 
-            double t = (double)iter / job->max_iter;
-            uint8_t r = (uint8_t)(9 * (1 - t) * t * t * t * 255);
-            uint8_t g = (uint8_t)(15 * (1 - t) * (1 - t) * t * t * 255);
-            uint8_t b = (uint8_t)(8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
+            int color_index = (int)(((double)iter / job->max_iter) * (COLOR_TABLE_SIZE - 1));
+            Color color = color_table[color_index];
+
+            uint8_t r = color.r;
+            uint8_t g = color.g;
+            uint8_t b = color.b;
 
             int i = (y * job->width + x) * 4;
             job->pixels[i + 0] = r;
@@ -85,6 +107,8 @@ int get_thread_count() {
 void generate_mandelbrot(uint8_t* pixels, int width, int height,
                          double centerX, double centerY, double zoom,
                          int max_iter, int threads) {
+    init_color_table(max_iter);
+
     MandelbrotJob* jobs = (MandelbrotJob*)malloc(sizeof(MandelbrotJob) * threads);
     THREAD_HANDLE* handles = (THREAD_HANDLE*)malloc(sizeof(THREAD_HANDLE) * threads);
 
