@@ -14,7 +14,9 @@ local zoomSpeedFactor = 0.98
 local imageData, mandelbrotImage
 
 function love.load()
-    love.window.setMode(width, height)
+    love.window.setMode(0, 0, { fullscreen = true })
+    width, height = love.graphics.getDimensions()
+
     imageData = love.image.newImageData(width, height)
     mandelbrotImage = love.graphics.newImage(imageData)
     generateFrame()
@@ -85,4 +87,10 @@ function love.draw()
                         ", " .. string.format("%.5f", centerY) .. ")", 10, 10)
     love.graphics.print("Zoom: " .. string.format("%.5f", zoom), 10, 30)
     love.graphics.print("Max Iterations: " .. max_iter, 10, 50)
+end
+
+function love.keypressed(key)
+    if key == "escape" then
+        love.event.quit()
+    end
 end
