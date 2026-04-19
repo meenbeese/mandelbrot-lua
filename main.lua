@@ -116,7 +116,6 @@ function love.update(dt)
 end
 
 function love.draw()
-    shader:send("maxIter", max_iter)
     love.graphics.setShader(shader)
     love.graphics.draw(mandelbrotImage, 0, 0)
     love.graphics.setShader()

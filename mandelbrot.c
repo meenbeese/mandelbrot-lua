@@ -67,15 +67,10 @@ static void compute_row_range(MandelbrotJob* job) {
             int color_index = (int)(((double)iter / job->max_iter) * (COLOR_TABLE_SIZE - 1));
             Color color = color_table[color_index];
 
-            uint8_t r = color.r;
-            uint8_t g = color.g;
-            uint8_t b = color.b;
-
             int i = (y * job->width + x) * 4;
-            uint8_t gray = (uint8_t)(((double)iter / job->max_iter) * 255);
-            job->pixels[i + 0] = gray;
-            job->pixels[i + 1] = gray;
-            job->pixels[i + 2] = gray;
+            job->pixels[i + 0] = color.r;
+            job->pixels[i + 1] = color.g;
+            job->pixels[i + 2] = color.b;
             job->pixels[i + 3] = 255;
         }
     }
