@@ -37,10 +37,22 @@ local imageData, mandelbrotImage
 
 local threadCount
 
+local previewScale = 3
+local previewWidth, previewHeight
+local previewScaleX, previewScaleY
+local previewImageData, previewImage
+local previewEnabled = true
+local isPreviewActive = false
+local lastInteractionTime = 0
+local idleRenderDelay = 0.1
+local needFullRender = false
+
 -- UI state
 local statsExpanded = true
 local statsButtonX, statsButtonY = 10, 10
 local statsButtonWidth, statsButtonHeight = 20, 20
+local previewToggleX, previewToggleY = 10, 0
+local previewToggleW, previewToggleH = 190, 30
 
 local shader
 
@@ -54,19 +66,40 @@ function love.load()
 
     imageData = love.image.newImageData(width, height)
     mandelbrotImage = love.graphics.newImage(imageData)
-    generateFrame()
+
+    previewWidth = math.max(1, math.floor(width / previewScale))
+    previewHeight = math.max(1, math.floor(height / previewScale))
+    previewScaleX = width / previewWidth
+    previewScaleY = height / previewHeight
+    previewImageData = love.image.newImageData(previewWidth, previewHeight)
+    previewImage = love.graphics.newImage(previewImageData)
+    previewImage:setFilter("linear", "linear")
+
+    generateFrame(false)
 end
 
-function generateFrame()
-    local pixelCount = width * height * 4
+function generateFrame(usePreview)
+    local targetWidth = usePreview and previewWidth or width
+    local targetHeight = usePreview and previewHeight or height
+    local pixelCount = targetWidth * targetHeight * 4
     local buffer = ffi.new("uint8_t[?]", pixelCount)
+    local renderIter = max_iter
 
-    mandelbrotLib.generate_mandelbrot(buffer, width, height, centerX, centerY, zoom, max_iter, threadCount)
+    mandelbrotLib.generate_mandelbrot(buffer, targetWidth, targetHeight, centerX, centerY, zoom, renderIter, threadCount)
 
-    local pixelPtr = imageData:getFFIPointer()
+    local targetData = usePreview and previewImageData or imageData
+    local pixelPtr = targetData:getFFIPointer()
     ffi.copy(pixelPtr, buffer, pixelCount)
 
-    mandelbrotImage:replacePixels(imageData)
+    if usePreview then
+        previewImage:replacePixels(previewImageData)
+        isPreviewActive = true
+        needFullRender = true
+    else
+        mandelbrotImage:replacePixels(imageData)
+        isPreviewActive = false
+        needFullRender = false
+    end
 end
 
 local function computeIterations()
@@ -110,14 +143,27 @@ function love.update(dt)
     end
 
     if isZoomingOrPanning then
+        lastInteractionTime = love.timer.getTime()
         max_iter = computeIterations()
-        generateFrame()
+        if previewEnabled then
+            generateFrame(true)
+        else
+            generateFrame(false)
+        end
+    else
+        if previewEnabled and needFullRender and love.timer.getTime() - lastInteractionTime > idleRenderDelay then
+            generateFrame(false)
+        end
     end
 end
 
 function love.draw()
     love.graphics.setShader(shader)
-    love.graphics.draw(mandelbrotImage, 0, 0)
+    if isPreviewActive then
+        love.graphics.draw(previewImage, 0, 0, 0, previewScaleX, previewScaleY)
+    else
+        love.graphics.draw(mandelbrotImage, 0, 0)
+    end
     love.graphics.setShader()
 
     love.graphics.setColor(0.2, 0.2, 0.2, 0.7)
@@ -151,6 +197,13 @@ function love.draw()
         love.graphics.print("Threads: " .. tostring(threadCount), statsX, 70)
         love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), statsX, 90)
     end
+
+    previewToggleY = height - previewToggleH - 10
+    love.graphics.setColor(0, 0, 0, 0.55)
+    love.graphics.rectangle("fill", previewToggleX, previewToggleY, previewToggleW, previewToggleH, 6, 6)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("line", previewToggleX, previewToggleY, previewToggleW, previewToggleH, 6, 6)
+    love.graphics.print("Preview: " .. (previewEnabled and "ON" or "OFF"), previewToggleX + 10, previewToggleY + 10)
 end
 
 function love.keypressed(key)
@@ -164,6 +217,15 @@ function love.mousepressed(x, y, button)
         if x >= statsButtonX and x <= statsButtonX + statsButtonWidth and
            y >= statsButtonY and y <= statsButtonY + statsButtonHeight then
             statsExpanded = not statsExpanded
+            return
+        end
+
+        if x >= previewToggleX and x <= previewToggleX + previewToggleW and
+           y >= previewToggleY and y <= previewToggleY + previewToggleH then
+            previewEnabled = not previewEnabled
+            if not previewEnabled then
+                generateFrame(false)
+            end
         end
     end
 end
