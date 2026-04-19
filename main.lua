@@ -3,7 +3,7 @@ local ffi = require("ffi")
 ffi.cdef[[
     void generate_mandelbrot(uint8_t* pixels, int width, int height,
                              double centerX, double centerY, double zoom,
-                             int max_iter, int threads);
+                             int max_iter, int threads, int aaEnabled);
     int get_thread_count();
 ]]
 
@@ -42,6 +42,7 @@ local previewWidth, previewHeight
 local previewScaleX, previewScaleY
 local previewImageData, previewImage
 local previewEnabled = true
+local aaEnabled = false
 local isPreviewActive = false
 local lastInteractionTime = 0
 local idleRenderDelay = 0.1
@@ -53,6 +54,8 @@ local statsButtonX, statsButtonY = 10, 10
 local statsButtonWidth, statsButtonHeight = 20, 20
 local previewToggleX, previewToggleY = 10, 0
 local previewToggleW, previewToggleH = 190, 30
+local aaToggleX, aaToggleY = 10, 0
+local aaToggleW, aaToggleH = 190, 30
 
 local shader
 
@@ -85,7 +88,7 @@ function generateFrame(usePreview)
     local buffer = ffi.new("uint8_t[?]", pixelCount)
     local renderIter = max_iter
 
-    mandelbrotLib.generate_mandelbrot(buffer, targetWidth, targetHeight, centerX, centerY, zoom, renderIter, threadCount)
+    mandelbrotLib.generate_mandelbrot(buffer, targetWidth, targetHeight, centerX, centerY, zoom, renderIter, threadCount, aaEnabled and 1 or 0)
 
     local targetData = usePreview and previewImageData or imageData
     local pixelPtr = targetData:getFFIPointer()
@@ -198,11 +201,16 @@ function love.draw()
         love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), statsX, 90)
     end
 
-    previewToggleY = height - previewToggleH - 10
+    aaToggleY = height - aaToggleH - 10
+    previewToggleY = aaToggleY - previewToggleH - 10
+
     love.graphics.setColor(0, 0, 0, 0.55)
+    love.graphics.rectangle("fill", aaToggleX, aaToggleY, aaToggleW, aaToggleH, 6, 6)
     love.graphics.rectangle("fill", previewToggleX, previewToggleY, previewToggleW, previewToggleH, 6, 6)
     love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("line", aaToggleX, aaToggleY, aaToggleW, aaToggleH, 6, 6)
     love.graphics.rectangle("line", previewToggleX, previewToggleY, previewToggleW, previewToggleH, 6, 6)
+    love.graphics.print("Antialias: " .. (aaEnabled and "ON" or "OFF"), aaToggleX + 10, aaToggleY + 10)
     love.graphics.print("Preview: " .. (previewEnabled and "ON" or "OFF"), previewToggleX + 10, previewToggleY + 10)
 end
 
@@ -220,12 +228,22 @@ function love.mousepressed(x, y, button)
             return
         end
 
+        if x >= aaToggleX and x <= aaToggleX + aaToggleW and
+           y >= aaToggleY and y <= aaToggleY + aaToggleH then
+            aaEnabled = not aaEnabled
+            if not aaEnabled and not previewEnabled then
+                generateFrame(false)
+            end
+            return
+        end
+
         if x >= previewToggleX and x <= previewToggleX + previewToggleW and
            y >= previewToggleY and y <= previewToggleY + previewToggleH then
             previewEnabled = not previewEnabled
             if not previewEnabled then
                 generateFrame(false)
             end
+            return
         end
     end
 end

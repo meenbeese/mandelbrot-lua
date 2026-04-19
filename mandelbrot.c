@@ -42,35 +42,76 @@ typedef struct {
     double ymin;
     double ymax;
     int max_iter;
+    int aa_enabled;
     int y_start;
     int y_end;
 } MandelbrotJob;
 
 static void compute_row_range(MandelbrotJob* job) {
+    double dx = (job->xmax - job->xmin) / job->width;
+    double dy = (job->ymax - job->ymin) / job->height;
+    double sampleOffset = 0.25;
+
     for (int y = job->y_start; y < job->y_end; y++) {
         for (int x = 0; x < job->width; x++) {
-            double cr = job->xmin + (x / (double)job->width) * (job->xmax - job->xmin);
-            double ci = job->ymin + (y / (double)job->height) * (job->ymax - job->ymin);
+            double accumR = 0.0;
+            double accumG = 0.0;
+            double accumB = 0.0;
+            int sampleCount = 1;
 
-            double zr = 0.0, zi = 0.0;
-            double zr2 = 0.0, zi2 = 0.0;
-            int iter = 0;
-            while (zr2 + zi2 < 4.0 && iter < job->max_iter) {
-                zi = 2.0 * zr * zi + ci;
-                zr = zr2 - zi2 + cr;
+            if (job->aa_enabled) {
+                sampleCount = 4;
+                for (int sy = 0; sy < 2; sy++) {
+                    for (int sx = 0; sx < 2; sx++) {
+                        double cr = job->xmin + (x + (sx + sampleOffset) * 0.5) * dx;
+                        double ci = job->ymin + (y + (sy + sampleOffset) * 0.5) * dy;
 
-                zr2 = zr * zr;
-                zi2 = zi * zi;
-                iter++;
+                        double zr = 0.0, zi = 0.0;
+                        double zr2 = 0.0, zi2 = 0.0;
+                        int iter = 0;
+                        while (zr2 + zi2 < 4.0 && iter < job->max_iter) {
+                            zi = 2.0 * zr * zi + ci;
+                            zr = zr2 - zi2 + cr;
+
+                            zr2 = zr * zr;
+                            zi2 = zi * zi;
+                            iter++;
+                        }
+
+                        int color_index = (int)(((double)iter / job->max_iter) * (COLOR_TABLE_SIZE - 1));
+                        Color color = color_table[color_index];
+                        accumR += color.r;
+                        accumG += color.g;
+                        accumB += color.b;
+                    }
+                }
+            } else {
+                double cr = job->xmin + (x / (double)job->width) * (job->xmax - job->xmin);
+                double ci = job->ymin + (y / (double)job->height) * (job->ymax - job->ymin);
+
+                double zr = 0.0, zi = 0.0;
+                double zr2 = 0.0, zi2 = 0.0;
+                int iter = 0;
+                while (zr2 + zi2 < 4.0 && iter < job->max_iter) {
+                    zi = 2.0 * zr * zi + ci;
+                    zr = zr2 - zi2 + cr;
+
+                    zr2 = zr * zr;
+                    zi2 = zi * zi;
+                    iter++;
+                }
+
+                int color_index = (int)(((double)iter / job->max_iter) * (COLOR_TABLE_SIZE - 1));
+                Color color = color_table[color_index];
+                accumR = color.r;
+                accumG = color.g;
+                accumB = color.b;
             }
 
-            int color_index = (int)(((double)iter / job->max_iter) * (COLOR_TABLE_SIZE - 1));
-            Color color = color_table[color_index];
-
             int i = (y * job->width + x) * 4;
-            job->pixels[i + 0] = color.r;
-            job->pixels[i + 1] = color.g;
-            job->pixels[i + 2] = color.b;
+            job->pixels[i + 0] = (uint8_t)(accumR / sampleCount + 0.5);
+            job->pixels[i + 1] = (uint8_t)(accumG / sampleCount + 0.5);
+            job->pixels[i + 2] = (uint8_t)(accumB / sampleCount + 0.5);
             job->pixels[i + 3] = 255;
         }
     }
@@ -100,7 +141,7 @@ int get_thread_count() {
 
 void generate_mandelbrot(uint8_t* pixels, int width, int height,
                          double centerX, double centerY, double zoom,
-                         int max_iter, int threads) {
+                         int max_iter, int threads, int aaEnabled) {
     init_color_table(max_iter);
 
     double baseHalfWidth = 2.5;
@@ -124,6 +165,7 @@ void generate_mandelbrot(uint8_t* pixels, int width, int height,
         jobs[i].ymin = ymin;
         jobs[i].ymax = ymax;
         jobs[i].max_iter = max_iter;
+        jobs[i].aa_enabled = aaEnabled;
         jobs[i].y_start = i * slice;
         jobs[i].y_end = (i == threads - 1) ? height : (i + 1) * slice;
 
