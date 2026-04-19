@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdlib.h>
 #include <math.h>
 
 #if defined(_WIN32)
@@ -6,6 +7,7 @@
     #define THREAD_RETURN DWORD WINAPI
     #define THREAD_HANDLE HANDLE
 #else
+    #include <unistd.h>
     #include <pthread.h>
     #define THREAD_RETURN void*
     #define THREAD_HANDLE pthread_t
