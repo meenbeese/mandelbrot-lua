@@ -37,6 +37,11 @@ local imageData, mandelbrotImage
 
 local threadCount
 
+-- UI state
+local statsExpanded = true
+local statsButtonX, statsButtonY = 10, 10
+local statsButtonWidth, statsButtonHeight = 20, 20
+
 local shader
 
 function love.load()
@@ -116,17 +121,49 @@ function love.draw()
     love.graphics.draw(mandelbrotImage, 0, 0)
     love.graphics.setShader()
 
-    -- Overlay UI
-    love.graphics.print("Center: (" .. string.format("%.5f", centerX) ..
-                        ", " .. string.format("%.5f", centerY) .. ")", 10, 10)
-    love.graphics.print("Zoom: " .. string.format("%.10f", zoom), 10, 30)
-    love.graphics.print("Max Iterations: " .. max_iter, 10, 50)
-    love.graphics.print("Threads: " .. tostring(threadCount), 10, 70)
-    love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), 10, 90)
+    love.graphics.setColor(0.2, 0.2, 0.2, 0.7)
+    love.graphics.rectangle("fill", statsButtonX, statsButtonY, statsButtonWidth, statsButtonHeight)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("line", statsButtonX, statsButtonY, statsButtonWidth, statsButtonHeight)
+    
+    love.graphics.setColor(1, 1, 1, 0.8)
+    if statsExpanded then
+        love.graphics.polygon("fill", 
+            statsButtonX + 10, statsButtonY + 5,
+            statsButtonX + 5, statsButtonY + 15,
+            statsButtonX + 15, statsButtonY + 15
+        )
+    else
+        love.graphics.polygon("fill",
+            statsButtonX + 5, statsButtonY + 5,
+            statsButtonX + 5, statsButtonY + 15,
+            statsButtonX + 15, statsButtonY + 10
+        )
+    end
+
+    if statsExpanded then
+        love.graphics.setColor(1, 1, 1, 1)
+        local statsX = statsButtonX + statsButtonWidth + 10
+        love.graphics.print("Center: (" .. string.format("%.5f", centerX) ..
+                            ", " .. string.format("%.5f", centerY) .. ")", statsX, 10)
+        love.graphics.print("Zoom: " .. string.format("%.10f", zoom), statsX, 30)
+        love.graphics.print("Max Iterations: " .. max_iter, statsX, 50)
+        love.graphics.print("Threads: " .. tostring(threadCount), statsX, 70)
+        love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), statsX, 90)
+    end
 end
 
 function love.keypressed(key)
     if key == "escape" then
         love.event.quit()
+    end
+end
+
+function love.mousepressed(x, y, button)
+    if button == 1 then
+        if x >= statsButtonX and x <= statsButtonX + statsButtonWidth and
+           y >= statsButtonY and y <= statsButtonY + statsButtonHeight then
+            statsExpanded = not statsExpanded
+        end
     end
 end
