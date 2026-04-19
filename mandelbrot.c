@@ -105,7 +105,7 @@ void generate_mandelbrot(uint8_t* pixels, int width, int height,
 
     double baseHalfWidth = 2.5;
     double baseHalfHeight = 2.0;
-    double scale = zoom;
+    double scale = 1.0 / zoom;
     double xmin = centerX - baseHalfWidth * scale;
     double xmax = centerX + baseHalfWidth * scale;
     double ymin = centerY - baseHalfHeight * scale;

@@ -71,13 +71,13 @@ end
 
 local function computeIterations()
     local safeZoom = math.max(zoom, 1e-10)
-    local calculated = 100 + math.floor(-math.log(safeZoom) * 50)
-    local limit = zoom > 1 and 300 or 2000  -- cap for zoomed-out
+    local calculated = 100 + math.floor(math.log(safeZoom) * 50)
+    local limit = zoom > 1 and 2000 or 300
     return math.max(50, math.min(calculated, limit))
 end
 
 function love.update(dt)
-    local moveAmount = panSpeed * zoom * baseHalfWidth * dt
+    local moveAmount = panSpeed * (baseHalfWidth / zoom) * dt
     local zoomSpeed = 1.05  -- Zoom 5% per zoom action
 
     isZoomingOrPanning = false
@@ -143,9 +143,10 @@ function love.draw()
     if statsExpanded then
         love.graphics.setColor(1, 1, 1, 1)
         local statsX = statsButtonX + statsButtonWidth + 10
+        local zoomPower = math.log10(math.max(zoom, 1e-10))
         love.graphics.print("Center: (" .. string.format("%.5f", centerX) ..
                             ", " .. string.format("%.5f", centerY) .. ")", statsX, 10)
-        love.graphics.print("Zoom: " .. string.format("%.10f", zoom), statsX, 30)
+        love.graphics.print("Zoom: 10^" .. string.format("%.2f", zoomPower), statsX, 30)
         love.graphics.print("Max Iterations: " .. max_iter, statsX, 50)
         love.graphics.print("Threads: " .. tostring(threadCount), statsX, 70)
         love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), statsX, 90)
