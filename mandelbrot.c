@@ -20,6 +20,7 @@ typedef struct {
 } Color;
 
 static Color color_table[COLOR_TABLE_SIZE];
+static int color_table_max_iter = -1;
 
 void init_color_table(int max_iter) {
     for (int i = 0; i < COLOR_TABLE_SIZE; i++) {
@@ -142,7 +143,10 @@ int get_thread_count() {
 void generate_mandelbrot(uint8_t* pixels, int width, int height,
                          double centerX, double centerY, double zoom,
                          int max_iter, int threads, int aaEnabled) {
-    init_color_table(max_iter);
+    if (max_iter != color_table_max_iter) {
+        init_color_table(max_iter);
+        color_table_max_iter = max_iter;
+    }
 
     double baseHalfWidth = 2.5;
     double baseHalfHeight = 2.0;
