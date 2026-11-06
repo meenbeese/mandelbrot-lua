@@ -1,7 +1,7 @@
 # Mandelbrot in Lua (Love2D)
 
 This project is an interactive Mandelbrot set explorer built using [Love2D](https://love2d.org/).  
-You can pan around and zoom into the fractal in real time with keyboard controls. It runs in full-screen and uses a performance-optimized native C library to compute the fractal efficiently.
+You can pan around and zoom into the fractal in real time with keyboard controls. It runs in full-screen and uses a hybrid renderer: a GLSL fragment shader for standard zoom levels and a precision-optimized native C library (or pure-Lua fallback) for deep zooms.
 
 **Supported platforms:** Windows, macOS, Linux, Web
 
@@ -89,7 +89,7 @@ Then open `http://localhost:8000` locally. On GitHub Actions, the **Build Web (W
 
 The repo includes a `netlify.toml`, so Netlify builds and serves the WASM build automatically. Connect the repo on Netlify and leave the project settings **empty** — the build command and publish directory (`dist`) come from `netlify.toml`.
 
-> **Note on the web build:** love.js does not include LuaJIT, so the FFI-based native library is unavailable. `main.lua` automatically falls back to a pure-Lua Mandelbrot renderer — same output and features (including the GLSL shader), but single-threaded and slower. Enable **Preview** mode on the web for comfortable navigation.
+> **Note on the web build:** love.js does not include LuaJIT, so the FFI-based native library is unavailable. `main.lua` automatically falls back to a pure-Lua Mandelbrot renderer for deep zooms — same output and features (including the GLSL path for standard views), but single-threaded and slower. Enable **Preview** mode on the web for comfortable deep-zoom navigation.
 
 ---
 
@@ -110,29 +110,31 @@ The desktop builds use a native C function for fast Mandelbrot rendering, compil
 
 ## Performance Optimizations
 
-This project includes several key optimizations to ensure smooth, real-time Mandelbrot rendering:
+This project uses a **hybrid renderer** that picks the best-execution path for the current zoom level:
 
-- **Native C backend (desktop):** Mandelbrot calculations are done in a compiled C shared library via LuaJIT FFI, with an automatic pure-Lua fallback when FFI is unavailable (web builds).
-- **Multithreaded computation:** Rows are processed in parallel using multiple threads (auto-detected at runtime).
+- **GPU path (standard views, zoom < ~10⁴):** The whole fractal — iteration loop *and* palette coloring — is computed per-pixel in a GLSL fragment shader. No CPU buffers, no texture uploads, no preview passes; results update live with the view state. This runs at display refresh rates on desktop and on the web (WebGL) alike.
+- **CPU fp64 path (deep zooms ≥ ~10⁴):** GPU shaders in this GLSL level are limited to fp32, and their compilers fold away compensated "double-single" arithmetic (verified: the error-extraction terms become exactly zero on fp32-algebra-folding compilers), which turns deep views into blocky noise. Past the threshold, rendering switches to the CPU in real double precision — the native C shared library via LuaJIT FFI (desktop, multithreaded), or the pure-Lua fallback (web).
+
+Supporting optimizations:
+
+- **Multithreaded computation:** CPU-path rows are processed in parallel (thread count auto-detected).
 - **Loop unrolling:** Enabled via -funroll-loops during compilation for faster iteration performance.
-- **Cached bounds:** xmin, xmax, ymin, and ymax are calculated only when zoom or pan occurs.
 - **Dynamic max iterations:** Automatically increases with zoom level for visual detail, with clamping to avoid lag.
 - **Clamped zoom precision:** Prevents zoom from becoming too small due to floating-point limits.
-- **GLSL fragment shader coloring:** Coloring is handled entirely on the GPU for smooth gradients and zero CPU cost.
-- **GPU-accelerated texture rendering:** Fractal data is uploaded to a texture and drawn in one pass for efficiency.
-- **Adaptive preview mode:** A low-resolution render is displayed while panning/zooming, then a full-resolution render kicks in 0.1 s after interaction stops (0.5 s on web).
+- **Adaptive preview mode (CPU path):** A low-resolution render is displayed while panning/zooming, then a full-resolution render kicks in 0.1 s after interaction stops (0.5 s on web).
 - **Optimized pure-Lua fallback (web):** The fallback renderer inlines its per-pixel iteration loop and hoists all loop math into cached locals, minimizing interpreter overhead.
+- **Heads-up display:** The stats panel shows which renderer (GPU / native C / Lua fallback) is active at the current zoom.
 
 ### Web performance
 
-Expect the web build to run slower than desktop — that's inherent to the platform, not a bug. love.js runs plain Lua (no LuaJIT), and the C library cannot come along (no FFI in the browser), so the fractal is computed single-threaded in a Lua interpreter — typically 50–100× slower than native C. To compensate, the web build automatically uses a coarser preview (5× downscale instead of 3×) and delays the idle full-resolution render. For the smoothest navigation, leave **Preview** enabled; the fullscreen render fires shortly after you stop moving.
+The web build uses the same voting: standard views render **on the GPU** and are comparably fast to desktop. Deep zooms fall back to the pure-Lua CPU path, which runs in a Lua interpreter (love.js has no LuaJIT/FFI) — typically 50–100× slower than native C. To compensate, the web build automatically uses a coarser preview (5× downscale instead of 3×) and delays the idle full-resolution render. For the smoothest deep-zooming on the web, leave **Preview** enabled; the fullscreen render fires shortly after you stop moving.
 
 ---
 
 ## Requirements
 
 - [Love2D](https://love2d.org/) 11.0 or later (desktop)
-- C compiler (desktop — optional, for the native renderer)
+- C compiler (desktop — optional: without it, deep zooms use the slower pure-Lua renderer)
 - [bun](https://bun.sh) and a static web server (web build)
 
 ---

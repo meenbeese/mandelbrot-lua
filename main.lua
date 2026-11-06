@@ -1,11 +1,38 @@
+-- Mandelbrot set explorer — hybrid renderer.
+-- Below a zoom threshold the entire fractal is computed per-pixel in the
+-- fragment shader (shader.glsl, plain fp32) — fast on every platform.
+-- Beyond that, fp32 precision in GPU shaders degrades into blocky artifacts
+-- (GLSL compilers here fold compensated "double-single" arithmetic away, and
+-- this GLSL level has no fma/bit ops to prevent it), so deep zooms render on
+-- the CPU:  the native C library via LuaJIT FFI when available, otherwise a
+-- pure-Lua fallback (web builds via love.js).
+
+local width, height = 800, 600
+local max_iter = 100
+
+-- View parameters
+local centerX, centerY = -0.5, 0.0
+local zoom = 1.0
+local baseHalfWidth = 2.5
+local baseHalfHeight = 2.0
+
+-- GPU (plain fp32) rendering stays crisp until blocky fp32 quantization
+-- (~1e-7 absolute) reaches a meaningful fraction of a pixel:
+-- pixel size = span/width = 5/(zoom*width). 1e4 keeps the error well below it.
+local GLSL_ZOOM_LIMIT = 1e4
+local gpuMode = true
+
+-- Control speeds
+local panSpeed = 1.0
+
+-- Native C library via LuaJIT FFI (desktop builds only, used for deep zoom).
+-- Web builds via love.js don't have LuaJIT/FFI, so fall back to pure Lua.
 local ffi, libname
 local usingNative = false
 local mandelbrotLib
 
--- Native C library via LuaJIT FFI (desktop builds only).
--- Web builds via love.js don't have LuaJIT/FFI, so fall back to pure Lua.
 if type(rawget(_G, "jit")) == "table" and pcall(require, "ffi") then
-    local ok, err = pcall(function()
+    local ok = pcall(function()
         ffi = require("ffi")
         ffi.cdef[[
             void generate_mandelbrot(uint8_t* pixels, int width, int height,
@@ -28,25 +55,26 @@ if type(rawget(_G, "jit")) == "table" and pcall(require, "ffi") then
     usingNative = ok
 end
 
-local width, height = 800, 600
-local max_iter = 100
+-- Pure-Lua deep-zoom fallback renderer (web builds via love.js, where there
+-- is no LuaJIT FFI). Produces the same output as the C library, single-threaded.
+local COLOR_TABLE_SIZE = 1024
+local color_table = {}
+local color_table_max_iter = -1
 
--- View parameters
-local centerX, centerY = -0.5, 0.0
-local zoom = 1.0
-local baseHalfWidth = 2.5
-local baseHalfHeight = 2.0
+local function init_color_table(max_iter)
+    for i = 1, COLOR_TABLE_SIZE do
+        local t = (i - 1) / (COLOR_TABLE_SIZE - 1)
+        local oneMinusT = 1 - t
+        color_table[i] = {
+            r = math.floor(9 * oneMinusT * t * t * t * 255 + 0.5),
+            g = math.floor(15 * oneMinusT * oneMinusT * t * t * 255 + 0.5),
+            b = math.floor(8.5 * oneMinusT * oneMinusT * oneMinusT * t * 255 + 0.5),
+        }
+    end
+    color_table_max_iter = max_iter
+end
 
--- Control speeds
-local panSpeed = 1.0
-local isZoomingOrPanning = false
-
-local imageData, mandelbrotImage
-
-local threadCount
-
--- Web tuning: pure-Lua rendering is ~50-100x slower than the native library, so
--- use a coarser preview and give the idle full render more of a head start.
+-- Pure-Lua fallback for the deep-zoom CPU path (web builds).
 local previewScale = usingNative and 3 or 5
 local previewWidth, previewHeight
 local previewScaleX, previewScaleY
@@ -68,9 +96,14 @@ local aaToggleX, aaToggleY = 10, 0
 local aaToggleW, aaToggleH = 190, 30
 
 local shader
+local threadCount
+
+local imageData, mandelbrotImage
 
 function love.load()
-    love.window.setMode(0, 0, { fullscreen = true })
+    pcall(function()
+        love.window.setMode(0, 0, { fullscreen = true })
+    end)
     width, height = love.graphics.getDimensions()
 
     threadCount = usingNative and mandelbrotLib.get_thread_count() or 1
@@ -91,25 +124,18 @@ function love.load()
     generateFrame(false)
 end
 
--- Pure-Lua fallback renderer (used on web builds via love.js, where there is no
--- LuaJIT FFI). Produces the same output as the C library, single-threaded.
-local COLOR_TABLE_SIZE = 1024
-local color_table = {}
-local color_table_max_iter = -1
-
-local function init_color_table(max_iter)
-    for i = 1, COLOR_TABLE_SIZE do
-        local t = (i - 1) / (COLOR_TABLE_SIZE - 1)
-        local oneMinusT = 1 - t
-        color_table[i] = {
-            r = math.floor(9 * oneMinusT * t * t * t * 255 + 0.5),
-            g = math.floor(15 * oneMinusT * oneMinusT * t * t * 255 + 0.5),
-            b = math.floor(8.5 * oneMinusT * oneMinusT * oneMinusT * t * 255 + 0.5),
-        }
-    end
-    color_table_max_iter = max_iter
+function love.resize(w, h)
+    width, height = w, h
 end
 
+local function computeIterations()
+    local safeZoom = math.max(zoom, 1e-10)
+    local calculated = 100 + math.floor(math.log(safeZoom) * 50)
+    local limit = zoom > 1 and 2000 or 300
+    return math.max(50, math.min(calculated, limit))
+end
+
+-- CPU renderer: fills targetData (C via FFI, or the pure-Lua fallback).
 local function generateFrameLua(targetData, targetWidth, targetHeight)
     if color_table_max_iter ~= max_iter then
         init_color_table(max_iter)
@@ -127,7 +153,6 @@ local function generateFrameLua(targetData, targetWidth, targetHeight)
     local lastColorIndex = COLOR_TABLE_SIZE
     local maxIter = max_iter
     local invMaxIter = 1.0 / max_iter
-    local iterDiv = (lastColorIndex - 1) * invMaxIter
     local cr, ci, iter, zr, zi, zr2, zi2, colorIndex
 
     for y = 0, targetHeight - 1 do
@@ -153,7 +178,7 @@ local function generateFrameLua(targetData, targetWidth, targetHeight)
                             zi2 = zi * zi
                             iter = iter + 1
                         end
-                        colorIndex = math.min(math.floor(iter * iterDiv) + 1, lastColorIndex)
+                        colorIndex = math.min(math.floor(iter * invMaxIter * (lastColorIndex - 1)) + 1, lastColorIndex)
                         local color = color_table[colorIndex]
                         accumR = accumR + color.r
                         accumG = accumG + color.g
@@ -214,18 +239,12 @@ function generateFrame(usePreview)
     end
 end
 
-local function computeIterations()
-    local safeZoom = math.max(zoom, 1e-10)
-    local calculated = 100 + math.floor(math.log(safeZoom) * 50)
-    local limit = zoom > 1 and 2000 or 300
-    return math.max(50, math.min(calculated, limit))
-end
-
 function love.update(dt)
     local moveAmount = panSpeed * (baseHalfWidth / zoom) * dt
     local zoomSpeed = 1.05  -- Zoom 5% per zoom action
 
-    isZoomingOrPanning = false
+    local wasGpuMode = gpuMode
+    local isZoomingOrPanning = false
 
     if love.keyboard.isDown('w') then
         centerY = centerY - moveAmount
@@ -254,38 +273,66 @@ function love.update(dt)
         isZoomingOrPanning = true
     end
 
-    if isZoomingOrPanning then
-        lastInteractionTime = love.timer.getTime()
+    gpuMode = zoom < GLSL_ZOOM_LIMIT
+
+    local modeChanged = gpuMode ~= wasGpuMode
+
+    if gpuMode then
+        -- GPU path renders live; nothing else to do. Cancel pending CPU work.
+        needFullRender = false
+        isPreviewActive = false
         max_iter = computeIterations()
-        if previewEnabled then
-            generateFrame(true)
-        else
-            generateFrame(false)
-        end
     else
-        if previewEnabled and needFullRender and love.timer.getTime() - lastInteractionTime > idleRenderDelay then
+        -- Deep zoom: CPU rendering with interaction preview.
+        if modeChanged then
+            -- Switching to the slow CPU path: preview back on by default.
+            previewEnabled = true
+        end
+        max_iter = computeIterations()
+        if isZoomingOrPanning then
+            lastInteractionTime = love.timer.getTime()
+            if previewEnabled then
+                generateFrame(true)
+            else
+                generateFrame(false)
+            end
+        elseif modeChanged or (previewEnabled and needFullRender
+                and love.timer.getTime() - lastInteractionTime > idleRenderDelay) then
             generateFrame(false)
         end
     end
 end
 
 function love.draw()
-    love.graphics.setShader(shader)
-    if isPreviewActive then
-        love.graphics.draw(previewImage, 0, 0, 0, previewScaleX, previewScaleY)
+    if gpuMode then
+        -- GPU pass: one fullscreen quad, fractal computed per-pixel in the shader.
+        love.graphics.setShader(shader)
+        shader:send("center", { centerX, centerY })
+        shader:send("span", { (baseHalfWidth * 2) / zoom, (baseHalfHeight * 2) / zoom })
+        shader:send("screenSize", { width, height })
+        shader:send("maxiter", max_iter)
+        shader:send("aa", aaEnabled and 1.0 or 0.0)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.rectangle("fill", 0, 0, width, height)
+        love.graphics.setShader()
     else
-        love.graphics.draw(mandelbrotImage, 0, 0)
+        -- CPU pass: the rendered image (full-res or interaction preview).
+        if isPreviewActive then
+            love.graphics.draw(previewImage, 0, 0, 0, previewScaleX, previewScaleY)
+        else
+            love.graphics.draw(mandelbrotImage, 0, 0)
+        end
     end
-    love.graphics.setShader()
 
+    -- Stats panel
     love.graphics.setColor(0.2, 0.2, 0.2, 0.7)
     love.graphics.rectangle("fill", statsButtonX, statsButtonY, statsButtonWidth, statsButtonHeight)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.rectangle("line", statsButtonX, statsButtonY, statsButtonWidth, statsButtonHeight)
-    
+
     love.graphics.setColor(1, 1, 1, 0.8)
     if statsExpanded then
-        love.graphics.polygon("fill", 
+        love.graphics.polygon("fill",
             statsButtonX + 10, statsButtonY + 5,
             statsButtonX + 5, statsButtonY + 15,
             statsButtonX + 15, statsButtonY + 15
@@ -302,24 +349,41 @@ function love.draw()
         love.graphics.setColor(1, 1, 1, 1)
         local statsX = statsButtonX + statsButtonWidth + 10
         local zoomPower = math.log10(math.max(zoom, 1e-10))
+        local renderer = gpuMode and "GPU (GLSL)"
+            or (usingNative and "CPU fp64 (native C)" or "CPU fp64 (Lua fallback)")
         love.graphics.print("Center: (" .. string.format("%.5f", centerX) ..
                             ", " .. string.format("%.5f", centerY) .. ")", statsX, 10)
         love.graphics.print("Zoom: 10^" .. string.format("%.2f", zoomPower), statsX, 30)
         love.graphics.print("Max Iterations: " .. max_iter, statsX, 50)
-        love.graphics.print("Threads: " .. tostring(threadCount), statsX, 70)
-        love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), statsX, 90)
+        love.graphics.print("Renderer: " .. renderer, statsX, 70)
+        if usingNative and not gpuMode then
+            love.graphics.print("Threads: " .. tostring(threadCount), statsX, 90)
+            love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), statsX, 110)
+        else
+            love.graphics.print("FPS: " .. tostring(love.timer.getFPS()), statsX, 90)
+        end
     end
 
     aaToggleY = height - aaToggleH - 10
     previewToggleY = aaToggleY - previewToggleH - 10
 
+    -- Antialias toggle
     love.graphics.setColor(0, 0, 0, 0.55)
     love.graphics.rectangle("fill", aaToggleX, aaToggleY, aaToggleW, aaToggleH, 6, 6)
-    love.graphics.rectangle("fill", previewToggleX, previewToggleY, previewToggleW, previewToggleH, 6, 6)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.rectangle("line", aaToggleX, aaToggleY, aaToggleW, aaToggleH, 6, 6)
-    love.graphics.rectangle("line", previewToggleX, previewToggleY, previewToggleW, previewToggleH, 6, 6)
     love.graphics.print("Antialias: " .. (aaEnabled and "ON" or "OFF"), aaToggleX + 10, aaToggleY + 10)
+
+    -- Preview toggle (promotes fast low-res renders on the CPU deep-zoom path;
+    -- auto-enabled when the renderer switches into it).
+    if gpuMode then
+        love.graphics.setColor(0, 0, 0, 0.3)
+    else
+        love.graphics.setColor(0, 0, 0, 0.55)
+    end
+    love.graphics.rectangle("fill", previewToggleX, previewToggleY, previewToggleW, previewToggleH, 6, 6)
+    love.graphics.setColor(1, 1, 1, gpuMode and 0.5 or 1)
+    love.graphics.rectangle("line", previewToggleX, previewToggleY, previewToggleW, previewToggleH, 6, 6)
     love.graphics.print("Preview: " .. (previewEnabled and "ON" or "OFF"), previewToggleX + 10, previewToggleY + 10)
 end
 
@@ -340,8 +404,8 @@ function love.mousepressed(x, y, button)
         if x >= aaToggleX and x <= aaToggleX + aaToggleW and
            y >= aaToggleY and y <= aaToggleY + aaToggleH then
             aaEnabled = not aaEnabled
-            if not aaEnabled and not previewEnabled then
-                generateFrame(false)
+            if not gpuMode then
+                needFullRender = true
             end
             return
         end
@@ -349,7 +413,7 @@ function love.mousepressed(x, y, button)
         if x >= previewToggleX and x <= previewToggleX + previewToggleW and
            y >= previewToggleY and y <= previewToggleY + previewToggleH then
             previewEnabled = not previewEnabled
-            if not previewEnabled then
+            if not previewEnabled and not gpuMode then
                 generateFrame(false)
             end
             return
