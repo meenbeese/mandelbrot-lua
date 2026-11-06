@@ -3,6 +3,10 @@
 This project is an interactive Mandelbrot set explorer built using [Love2D](https://love2d.org/).  
 You can pan around and zoom into the fractal in real time with keyboard controls. It runs in full-screen and uses a performance-optimized native C library to compute the fractal efficiently.
 
+**Supported platforms:** Windows, macOS, Linux, Web
+
+All platform builds are produced automatically by GitHub Actions — every push to `main` publishes download artifacts for macOS, Windows, Linux, and a WASM web build.
+
 ---
 
 ## Screenshots
@@ -25,54 +29,73 @@ You can pan around and zoom into the fractal in real time with keyboard controls
 | X   | Zoom out         |
 | ESC | Quit the program |
 
+On the web build, ESC closes the page's request to exit and clicks are used for the on-screen toggles (stats, preview, antialias).
+
 ---
 
 ## How to Run
 
-1. **Install Love2D:**  
-   Download and install Love2D from https://love2d.org/ for your platform.
+### From a CI build
 
-2. **Set up project folder:**  
-   Create a folder named `mandelbrot` (or any name you like), and place your `main.lua` file inside it, along with the compiled C shared library (`mandelbrot.dll`, `mandelbrot.so`, or `mandelbrot.dylib` depending on your OS).
+1. Go to the **Actions** tab of this repository, open the latest **Build Desktop** run.
+2. Download the artifact for your platform (`mandelbrot-macos`, `mandelbrot-windows`, or `mandelbrot-linux`) and unpack it.
+3. Install [Love2D](https://love2d.org/) for your platform, then run:
 
-3. **Run the project:**  
-   - **Option 1:** Drag the folder onto the Love2D executable.
-   - **Option 2:** From a terminal, run:
-     ```sh
-     love mandelbrot/
-     ```
+```sh
+love mandelbrot/          # the unzipped folder containing main.lua
+```
 
----
+### macOS
 
-## Compiling the C Shared Library
+```sh
+git clone <this repo> && cd mandelbrot-lua
+clang -O3 -funroll-loops -shared -o mandelbrot.dylib -fPIC mandelbrot.c
+love .                    # requires love on your PATH (brew users: see note below)
+```
 
-The project uses a native C function to speed up Mandelbrot rendering. You must compile the `mandelbrot.c` file into a shared library:
+> The Homebrew cask for Love2D is currently disabled (Gatekeeper check). Temporary workaround:
+> download `love-11.x-macos.zip` from the [LÖVE GitHub releases](https://github.com/love2d/love/releases),
+> run `xattr -cr love.app` after unpacking, then invoke `love.app/Contents/MacOS/love .`.
 
-### On Windows (MinGW or MSVC):
+### Windows (MinGW)
 
 ```sh
 gcc -O3 -funroll-loops -shared -o mandelbrot.dll -fPIC mandelbrot.c
+love .
 ```
 
-### On Linux
+### Linux
 
 ```sh
 gcc -O3 -funroll-loops -shared -o mandelbrot.so -fPIC mandelbrot.c
+love .
 ```
 
-### On macOS
+The Lua code detects your OS and automatically loads `mandelbrot.dll`, `mandelbrot.dylib`, or `mandelbrot.so` — so the compiled library must sit next to `main.lua`.
+
+### Web (WebAssembly)
+
+The web build uses [love.js](https://github.com/Davidobot/love.js) (Emscripten/WASM). Build locally with [bun](https://bun.sh):
 
 ```sh
-gcc -O3 -funroll-loops -shared -o mandelbrot.dylib -fPIC mandelbrot.c
+bunx love.js . build/web -c -t "Mandelbrot"
+cd build/web
+python3 -m http.server 8000   # must be served over HTTP, file:// will not work
 ```
 
-Make sure the resulting file is named exactly:
+Then open `http://localhost:8000` locally. On GitHub Actions, the **Build Web (WASM)** workflow produces a ready-to-serve `mandelbrot-web` zip artifact (e.g. for itch.io).
 
-- `mandelbrot.dll` on Windows
-- `mandelbrot.so` on Linux
-- `mandelbrot.dylib` on macOS
+### Continuous deployment to Netlify
 
-The Lua code will detect your OS and load the appropriate file automatically.
+The repo includes a `netlify.toml`, so Netlify builds and serves the WASM build automatically. Connect the repo on Netlify and leave the project settings **empty** — the build command and publish directory (`dist`) come from `netlify.toml`.
+
+> **Note on the web build:** love.js does not include LuaJIT, so the FFI-based native library is unavailable. `main.lua` automatically falls back to a pure-Lua Mandelbrot renderer — same output and features (including the GLSL shader), but single-threaded and slower. Enable **Preview** mode on the web for comfortable navigation.
+
+---
+
+### Compiling the C Shared Library
+
+The desktop builds use a native C function for fast Mandelbrot rendering, compiled into a shared library sitting next to `main.lua` (`mandelbrot.dll` / `mandelbrot.so` / `mandelbrot.dylib`). Without it, the game falls back to the slower pure-Lua renderer — so compiling is strongly recommended for desktop play (see the platform commands under [How to Run](#how-to-run)).
 
 ---
 
@@ -89,7 +112,7 @@ The Lua code will detect your OS and load the appropriate file automatically.
 
 This project includes several key optimizations to ensure smooth, real-time Mandelbrot rendering:
 
-- **Native C backend:** All Mandelbrot calculations are done in a compiled C shared library via LuaJIT FFI.
+- **Native C backend (desktop):** Mandelbrot calculations are done in a compiled C shared library via LuaJIT FFI, with an automatic pure-Lua fallback when FFI is unavailable (web builds).
 - **Multithreaded computation:** Rows are processed in parallel using multiple threads (auto-detected at runtime).
 - **Loop unrolling:** Enabled via -funroll-loops during compilation for faster iteration performance.
 - **Cached bounds:** xmin, xmax, ymin, and ymax are calculated only when zoom or pan occurs.
@@ -102,8 +125,9 @@ This project includes several key optimizations to ensure smooth, real-time Mand
 
 ## Requirements
 
-- [Love2D](https://love2d.org/) 11.0 or later
-- C compiler
+- [Love2D](https://love2d.org/) 11.0 or later (desktop)
+- C compiler (desktop — optional, for the native renderer)
+- [bun](https://bun.sh) and a static web server (web build)
 
 ---
 

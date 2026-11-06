@@ -1,0 +1,38 @@
+name: Build Web (WASM)
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: web (wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build web bundle with love.js
+        run: |
+          # stage only the runtime game files (screenshots in assets/ are docs-only
+          # and would bloat the wasm memory requirement)
+          mkdir -p .webstage
+          cp main.lua shader.glsl .webstage/
+          bunx love.js .webstage build/web -c -t "Mandelbrot"
+          rm -rf .webstage
+
+      - name: Package
+        run: |
+          cd build/web
+          zip -9 -r ../../mandelbrot-web.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mandelbrot-web
+          path: mandelbrot-web.zip

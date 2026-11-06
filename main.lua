@@ -1,24 +1,32 @@
-local ffi = require("ffi")
+local ffi, libname
+local usingNative = false
+local mandelbrotLib
 
-ffi.cdef[[
-    void generate_mandelbrot(uint8_t* pixels, int width, int height,
-                             double centerX, double centerY, double zoom,
-                             int max_iter, int threads, int aaEnabled);
-    int get_thread_count();
-]]
+-- Native C library via LuaJIT FFI (desktop builds only).
+-- Web builds via love.js don't have LuaJIT/FFI, so fall back to pure Lua.
+if type(rawget(_G, "jit")) == "table" and pcall(require, "ffi") then
+    local ok, err = pcall(function()
+        ffi = require("ffi")
+        ffi.cdef[[
+            void generate_mandelbrot(uint8_t* pixels, int width, int height,
+                                     double centerX, double centerY, double zoom,
+                                     int max_iter, int threads, int aaEnabled);
+            int get_thread_count();
+        ]]
 
-local libname
-if jit.os == "Windows" then
-    libname = "mandelbrot.dll"
-elseif jit.os == "OSX" then
-    libname = "mandelbrot.dylib"
-else
-    libname = "mandelbrot.so"
+        if jit.os == "Windows" then
+            libname = "mandelbrot.dll"
+        elseif jit.os == "OSX" then
+            libname = "mandelbrot.dylib"
+        else
+            libname = "mandelbrot.so"
+        end
+
+        local path = love.filesystem.getSource() .. "/" .. libname
+        mandelbrotLib = ffi.load(path)
+    end)
+    usingNative = ok
 end
-
-local path = love.filesystem.getSource() .. "/" .. libname
-
-local mandelbrotLib = ffi.load(path)
 
 local width, height = 800, 600
 local max_iter = 100
@@ -63,7 +71,7 @@ function love.load()
     love.window.setMode(0, 0, { fullscreen = true })
     width, height = love.graphics.getDimensions()
 
-    threadCount = mandelbrotLib.get_thread_count()
+    threadCount = usingNative and mandelbrotLib.get_thread_count() or 1
 
     shader = love.graphics.newShader("shader.glsl")
 
@@ -81,18 +89,106 @@ function love.load()
     generateFrame(false)
 end
 
+-- Pure-Lua fallback renderer (used on web builds via love.js, where there is no
+-- LuaJIT FFI). Produces the same output as the C library, single-threaded.
+local COLOR_TABLE_SIZE = 1024
+local color_table = {}
+local color_table_max_iter = -1
+
+local function init_color_table(max_iter)
+    for i = 1, COLOR_TABLE_SIZE do
+        local t = (i - 1) / (COLOR_TABLE_SIZE - 1)
+        local oneMinusT = 1 - t
+        color_table[i] = {
+            r = math.floor(9 * oneMinusT * t * t * t * 255 + 0.5),
+            g = math.floor(15 * oneMinusT * oneMinusT * t * t * 255 + 0.5),
+            b = math.floor(8.5 * oneMinusT * oneMinusT * oneMinusT * t * 255 + 0.5),
+        }
+    end
+    color_table_max_iter = max_iter
+end
+
+local function iteratePixel(cr, ci, maxIter)
+    local zr, zi, zr2, zi2, iter = 0, 0, 0, 0, 0
+    while zr2 + zi2 < 4.0 and iter < maxIter do
+        zi = 2.0 * zr * zi + ci
+        zr = zr2 - zi2 + cr
+        zr2 = zr * zr
+        zi2 = zi * zi
+        iter = iter + 1
+    end
+    return iter
+end
+
+local function generateFrameLua(targetData, targetWidth, targetHeight)
+    if color_table_max_iter ~= max_iter then
+        init_color_table(max_iter)
+    end
+
+    local scale = 1.0 / zoom
+    local xmin = centerX - baseHalfWidth * scale
+    local xmax = centerX + baseHalfWidth * scale
+    local ymin = centerY - baseHalfHeight * scale
+    local ymax = centerY + baseHalfHeight * scale
+    local dx = (xmax - xmin) / targetWidth
+    local dy = (ymax - ymin) / targetHeight
+
+    local sampleOffset = 0.25
+    local lastColorIndex = COLOR_TABLE_SIZE
+
+    for y = 0, targetHeight - 1 do
+        local ciBase = ymin + y * dy
+        for x = 0, targetWidth - 1 do
+            local accumR, accumG, accumB, sampleCount = 0, 0, 0, 1
+            local iter
+
+            if aaEnabled then
+                sampleCount = 4
+                for sy = 0, 1 do
+                    local ci = ymin + (y + (sy + sampleOffset) * 0.5) * dy
+                    for sx = 0, 1 do
+                        local cr = xmin + (x + (sx + sampleOffset) * 0.5) * dx
+                        iter = iteratePixel(cr, ci, max_iter)
+                        local color = color_table[math.min(math.floor(iter / max_iter * (lastColorIndex - 1)) + 1, lastColorIndex)]
+                        accumR = accumR + color.r
+                        accumG = accumG + color.g
+                        accumB = accumB + color.b
+                    end
+                end
+            else
+                local cr = xmin + x * dx
+                iter = iteratePixel(cr, ciBase, max_iter)
+                local color = color_table[math.min(math.floor(iter / max_iter * (lastColorIndex - 1)) + 1, lastColorIndex)]
+                accumR, accumG, accumB = color.r, color.g, color.b
+            end
+
+            targetData:setPixel(x, y,
+                accumR / sampleCount / 255,
+                accumG / sampleCount / 255,
+                accumB / sampleCount / 255,
+                1)
+        end
+    end
+end
+
 function generateFrame(usePreview)
     local targetWidth = usePreview and previewWidth or width
     local targetHeight = usePreview and previewHeight or height
-    local pixelCount = targetWidth * targetHeight * 4
-    local buffer = ffi.new("uint8_t[?]", pixelCount)
-    local renderIter = max_iter
 
-    mandelbrotLib.generate_mandelbrot(buffer, targetWidth, targetHeight, centerX, centerY, zoom, renderIter, threadCount, aaEnabled and 1 or 0)
+    if usingNative then
+        local pixelCount = targetWidth * targetHeight * 4
+        local buffer = ffi.new("uint8_t[?]", pixelCount)
+        local renderIter = max_iter
 
-    local targetData = usePreview and previewImageData or imageData
-    local pixelPtr = targetData:getFFIPointer()
-    ffi.copy(pixelPtr, buffer, pixelCount)
+        mandelbrotLib.generate_mandelbrot(buffer, targetWidth, targetHeight, centerX, centerY, zoom, renderIter, threadCount, aaEnabled and 1 or 0)
+
+        local targetData = usePreview and previewImageData or imageData
+        local pixelPtr = targetData:getFFIPointer()
+        ffi.copy(pixelPtr, buffer, pixelCount)
+    else
+        local targetData = usePreview and previewImageData or imageData
+        generateFrameLua(targetData, targetWidth, targetHeight)
+    end
 
     if usePreview then
         previewImage:replacePixels(previewImageData)

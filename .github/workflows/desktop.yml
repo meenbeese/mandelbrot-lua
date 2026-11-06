@@ -1,0 +1,66 @@
+name: Build Desktop
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos
+            lib: mandelbrot.dylib
+          - os: ubuntu-latest
+            name: linux
+            lib: mandelbrot.so
+          - os: windows-latest
+            name: windows
+            lib: mandelbrot.dll
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile native library (Linux)
+        if: matrix.name == 'linux'
+        run: gcc -O3 -funroll-loops -shared -o mandelbrot.so -fPIC mandelbrot.c
+
+      - name: Compile native library (macOS)
+        if: matrix.name == 'macos'
+        run: clang -O3 -funroll-loops -shared -o mandelbrot.dylib -fPIC mandelbrot.c
+
+      - name: Compile native library (Windows, MinGW via MSYS2)
+        if: matrix.name == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc
+      - name: Compile DLL (Windows)
+        if: matrix.name == 'windows'
+        shell: msys2 {0}
+        run: |
+          gcc -O3 -funroll-loops -shared -o mandelbrot.dll -fPIC mandelbrot.c
+          mkdir -p package
+          cp main.lua shader.glsl mandelbrot.dll package/
+          powershell Compress-Archive -Path 'package/*' -DestinationPath mandelbrot-windows.zip -Force
+
+      - name: Package (macOS / Linux)
+        if: matrix.name != 'windows'
+        run: |
+          mkdir -p package
+          cp main.lua shader.glsl ${{ matrix.lib }} package/
+          cd package
+          zip -9 ../mandelbrot-${{ matrix.name }}.zip main.lua shader.glsl mandelbrot.*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mandelbrot-${{ matrix.name }}
+          path: mandelbrot-${{ matrix.name }}.zip
