@@ -75,19 +75,28 @@ The Lua code detects your OS and automatically loads `mandelbrot.dll`, `mandelbr
 
 ### Web (WebAssembly)
 
-The web build uses [love.js](https://github.com/Davidobot/love.js) (Emscripten/WASM). Build locally with [bun](https://bun.sh):
+The web build uses [2dengine's love.js](https://github.com/2dengine/love.js): the game is packed as a plain `.love` zip and served by the love.js player runtime (LÖVE 11.5, same as desktop). There is no build toolchain — a small script assembles the static bundle:
 
 ```sh
-bunx love.js . build/web -c -t "Mandelbrot"
-cd build/web
-python3 -m http.server 8000   # must be served over HTTP, file:// will not work
+mkdir -p build/web/11.5 .webstage
+cp web/index.html build/web/
+cp main.lua shader.glsl .webstage/
+(cd .webstage && zip -q -9 ../build/web/mandelbrot.love main.lua shader.glsl)
+rm -rf .webstage
+# then download player.js, style.css and the 11.5/ runtime files
+# (pinned commit SHA: see .github/workflows/web.yml)
+python3 -m http.server 8000 -d build/web   # must be served over HTTP, file:// will not work
 ```
 
-Then open `http://localhost:8000` locally. On GitHub Actions, the **Build Web (WASM)** workflow produces a ready-to-serve `mandelbrot-web` zip artifact (e.g. for itch.io).
+Then open `http://localhost:8000` locally. On GitHub Actions, the **Build Web (WASM)** workflow produces a ready-to-serve `mandelbrot-web` zip artifact.
 
-### Continuous deployment to Netlify
+**Hosting note:** the player runtime uses `SharedArrayBuffer`/pthreads and therefore needs cross-origin isolation headers on the serving path:
 
-The repo includes a `netlify.toml`, so Netlify builds and serves the WASM build automatically. Connect the repo on Netlify and leave the project settings **empty** — the build command and publish directory (`dist`) come from `netlify.toml`.
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+Content-Security-Policy: script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; worker-src 'self' blob:
+```
 
 > **Note on the web build:** love.js does not include LuaJIT, so the FFI-based native library is unavailable. `main.lua` automatically falls back to a pure-Lua Mandelbrot renderer for deep zooms — same output and features (including the GLSL path for standard views), but single-threaded and slower. Enable **Preview** mode on the web for comfortable deep-zoom navigation.
 
@@ -127,7 +136,7 @@ Supporting optimizations:
 
 ### Web performance
 
-The web build uses the same voting: standard views render **on the GPU** and are comparably fast to desktop. Deep zooms fall back to the pure-Lua CPU path, which runs in a Lua interpreter (love.js has no LuaJIT/FFI) — typically 50–100× slower than native C. To compensate, the web build automatically uses a coarser preview (5× downscale instead of 3×) and delays the idle full-resolution render. For the smoothest deep-zooming on the web, leave **Preview** enabled; the fullscreen render fires shortly after you stop moving.
+The web build uses the same split: standard views render **on the GPU** and are comparably fast to desktop. Deep zooms fall back to the pure-Lua CPU path, which runs in a Lua interpreter (love.js has no LuaJIT/FFI) — typically 50–100× slower than native C. To compensate, the web build automatically uses a coarser preview (5× downscale instead of 3×) and delays the idle full-resolution render. For the smoothest deep-zooming on the web, leave **Preview** enabled; the fullscreen render fires shortly after you stop moving.
 
 ---
 
@@ -135,7 +144,8 @@ The web build uses the same voting: standard views render **on the GPU** and are
 
 - [Love2D](https://love2d.org/) 11.0 or later (desktop)
 - C compiler (desktop — optional: without it, deep zooms use the slower pure-Lua renderer)
-- [bun](https://bun.sh) and a static web server (web build)
+- Static web server with cross-origin isolation headers (web build — see [Web](#web-webassembly))
+- [zip](https://linux.die.net/man/1/zip) and any HTTP client (web build scripts)
 
 ---
 

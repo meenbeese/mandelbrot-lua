@@ -13,17 +13,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Build web bundle with love.js
+      - name: Assemble web bundle (2dengine love.js)
         run: |
-          # stage only the runtime game files (screenshots in assets/ are docs-only
-          # and would bloat the wasm memory requirement)
-          mkdir -p .webstage
+          # The 2dengine love.js player serves a plain .love package — no build
+          # toolchain needed. Pin the player files to a commit SHA for
+          # reproducible builds; bump to pick up player updates.
+          PIN=87c5645cfb7b70a0b58e9ab0d656e0fb4c0960d7
+          BASE=https://raw.githubusercontent.com/2dengine/love.js/$PIN
+          mkdir -p build/web/11.5 .webstage
+          cp web/index.html build/web/index.html
+          curl -fsSL $BASE/player.js        -o build/web/player.js
+          curl -fsSL $BASE/style.css        -o build/web/style.css
+          curl -fsSL $BASE/11.5/love.js     -o build/web/11.5/love.js
+          curl -fsSL $BASE/11.5/love.wasm   -o build/web/11.5/love.wasm
+          curl -fsSL $BASE/11.5/license.txt -o build/web/11.5/license.txt
+          # stage only the runtime game files (assets/ screenshots are docs-only)
+          # and pack them as the .love package the player loads
           cp main.lua shader.glsl .webstage/
-          bunx love.js .webstage build/web -c -t "Mandelbrot"
+          (cd .webstage && zip -q -9 ../build/web/mandelbrot.love main.lua shader.glsl)
           rm -rf .webstage
 
       - name: Package

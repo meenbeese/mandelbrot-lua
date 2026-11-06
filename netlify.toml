@@ -1,15 +1,33 @@
-# Netlify build config for the wasm web build (via love.js + bun)
+# Netlify build config for the wasm web build (2dengine love.js player).
+# The player (player.js + love.js + love.wasm) serves a plain .love package —
+# no build toolchain needed. Pin the 2dengine files to a commit SHA for
+# reproducible deploys; bump the SHA to pick up player updates.
+# web/index.html (loading screen/page chrome) is vendored in this repo.
+
 [build]
   publish = "dist"
   command = """
-    python3 -m pip install --quiet numpy 2>/dev/null || pip3 install --quiet numpy || true
-    curl -fsSL https://bun.sh/install | bash
-    export PATH="$HOME/.bun/bin:$PATH"
-    mkdir -p .webstage
+    PIN=87c5645cfb7b70a0b58e9ab0d656e0fb4c0960d7
+    BASE=https://raw.githubusercontent.com/2dengine/love.js/$PIN
+    mkdir -p dist/11.5 .webstage
+    cp web/index.html dist/index.html
+    curl -fsSL $BASE/player.js        -o dist/player.js
+    curl -fsSL $BASE/style.css        -o dist/style.css
+    curl -fsSL $BASE/11.5/love.js     -o dist/11.5/love.js
+    curl -fsSL $BASE/11.5/love.wasm   -o dist/11.5/love.wasm
+    curl -fsSL $BASE/11.5/license.txt -o dist/11.5/license.txt
+    # stage only the runtime game files (assets/ screenshots are docs-only)
+    # and pack them as the .love package the player loads
     cp main.lua shader.glsl .webstage/
-    bunx love.js .webstage build/web -c -t "Mandelbrot"
+    (cd .webstage && zip -q -9 ../dist/mandelbrot.love main.lua shader.glsl)
     rm -rf .webstage
-    SITE=$(dirname "$(find build/web -name 'love.wasm' -print -quit)")
-    mkdir -p dist
-    cp -r "$SITE"/. dist/
   """
+
+# The 2dengine love.js player uses SharedArrayBuffer/pthreads and therefore
+# requires cross-origin isolation on the serving path.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
+    Content-Security-Policy = "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; worker-src 'self' blob:"
