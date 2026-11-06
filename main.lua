@@ -94,6 +94,9 @@ local previewToggleX, previewToggleY = 10, 0
 local previewToggleW, previewToggleH = 190, 30
 local aaToggleX, aaToggleY = 10, 0
 local aaToggleW, aaToggleH = 190, 30
+local aboutOpen = false
+local aboutButtonWidth, aboutButtonHeight = 64, 20
+local aboutButtonX, aboutButtonY = 0, 0
 
 local shader
 local threadCount
@@ -304,6 +307,9 @@ function love.update(dt)
 end
 
 function love.draw()
+    local renderer = gpuMode and "GPU (GLSL)"
+        or (usingNative and "CPU fp64 (native C)" or "CPU fp64 (Lua fallback)")
+
     if gpuMode then
         -- GPU pass: one fullscreen quad, fractal computed per-pixel in the shader.
         love.graphics.setShader(shader)
@@ -346,11 +352,12 @@ function love.draw()
     end
 
     if statsExpanded then
-        love.graphics.setColor(1, 1, 1, 1)
         local statsX = statsButtonX + statsButtonWidth + 10
+        local rows = (usingNative and not gpuMode) and 6 or 5
+        love.graphics.setColor(0.08, 0.08, 0.08, 0.75)
+        love.graphics.rectangle("fill", statsX - 10, 4, 220, rows * 20 + 8, 6, 6)
+        love.graphics.setColor(1, 1, 1, 1)
         local zoomPower = math.log10(math.max(zoom, 1e-10))
-        local renderer = gpuMode and "GPU (GLSL)"
-            or (usingNative and "CPU fp64 (native C)" or "CPU fp64 (Lua fallback)")
         love.graphics.print("Center: (" .. string.format("%.5f", centerX) ..
                             ", " .. string.format("%.5f", centerY) .. ")", statsX, 10)
         love.graphics.print("Zoom: 10^" .. string.format("%.2f", zoomPower), statsX, 30)
@@ -385,6 +392,71 @@ function love.draw()
     love.graphics.setColor(1, 1, 1, gpuMode and 0.5 or 1)
     love.graphics.rectangle("line", previewToggleX, previewToggleY, previewToggleW, previewToggleH, 6, 6)
     love.graphics.print("Preview: " .. (previewEnabled and "ON" or "OFF"), previewToggleX + 10, previewToggleY + 10)
+
+    -- Keyboard cheat sheet (bottom right)
+    local cheatLines = {
+        "W/A/S/D: Pan",
+        "Z: Zoom in",
+        "X: Zoom out",
+        "Esc: Quit",
+    }
+    local font = love.graphics.getFont()
+    local cheatW = 110
+    for _, line in ipairs(cheatLines) do
+        cheatW = math.max(cheatW, font:getWidth(line) + 20)
+    end
+    local cheatH = #cheatLines * 20
+    local cheatX = width - cheatW - 10
+    local cheatY = height - cheatH - 10
+    love.graphics.setColor(0.08, 0.08, 0.08, 0.75)
+    love.graphics.rectangle("fill", cheatX, cheatY, cheatW, cheatH, 6, 6)
+    love.graphics.setColor(1, 1, 1, 0.35)
+    love.graphics.rectangle("line", cheatX, cheatY, cheatW, cheatH, 6, 6)
+    love.graphics.setColor(1, 1, 1, 1)
+    for i, line in ipairs(cheatLines) do
+        love.graphics.print(line, cheatX + 10, cheatY + 5 + (i - 1) * 20)
+    end
+
+    -- About button (top right) and expandable about page
+    aboutButtonX = width - aboutButtonWidth - 10
+    aboutButtonY = 10
+    love.graphics.setColor(0.08, 0.08, 0.08, 0.75)
+    love.graphics.rectangle("fill", aboutButtonX, aboutButtonY, aboutButtonWidth, aboutButtonHeight, 6, 6)
+    love.graphics.setColor(1, 1, 1, aboutOpen and 1 or 0.35)
+    love.graphics.rectangle("line", aboutButtonX, aboutButtonY, aboutButtonWidth, aboutButtonHeight, 6, 6)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print("About", aboutButtonX + 12, aboutButtonY + 3)
+
+    if aboutOpen then
+        local aboutLines = {
+            "Mandelbrot Explorer",
+            "",
+            "A real-time Mandelbrot set explorer.",
+            "Standard views render on the GPU;",
+            "deep zooms switch to fp64 on the CPU.",
+            "",
+            "Renderer: " .. renderer,
+            "",
+            "Built with LÖVE 2D, GLSL and LuaJIT FFI.",
+            "License: MIT",
+        }
+        local fontWidth = 0
+        for _, line in ipairs(aboutLines) do
+            fontWidth = math.max(fontWidth, font:getWidth(line))
+        end
+        local pageW = math.max(fontWidth + 20, 260)
+        local pageH = #aboutLines * 20 + 14
+        local pageX = width - pageW - 10
+        local pageY = aboutButtonY + aboutButtonHeight + 10
+        love.graphics.setColor(0.05, 0.05, 0.05, 0.85)
+        love.graphics.rectangle("fill", pageX, pageY, pageW, pageH, 6, 6)
+        love.graphics.setColor(1, 1, 1, 0.35)
+        love.graphics.rectangle("line", pageX, pageY, pageW, pageH, 6, 6)
+        love.graphics.setColor(1, 1, 1, 1)
+        for i, line in ipairs(aboutLines) do
+            love.graphics.print(line, pageX + 10, pageY + 10 + (i - 1) * 20)
+        end
+    end
 end
 
 function love.keypressed(key)
@@ -416,6 +488,12 @@ function love.mousepressed(x, y, button)
             if not previewEnabled and not gpuMode then
                 generateFrame(false)
             end
+            return
+        end
+
+        if x >= aboutButtonX and x <= aboutButtonX + aboutButtonWidth and
+           y >= aboutButtonY and y <= aboutButtonY + aboutButtonHeight then
+            aboutOpen = not aboutOpen
             return
         end
     end
