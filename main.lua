@@ -45,7 +45,9 @@ local imageData, mandelbrotImage
 
 local threadCount
 
-local previewScale = 3
+-- Web tuning: pure-Lua rendering is ~50-100x slower than the native library, so
+-- use a coarser preview and give the idle full render more of a head start.
+local previewScale = usingNative and 3 or 5
 local previewWidth, previewHeight
 local previewScaleX, previewScaleY
 local previewImageData, previewImage
@@ -53,7 +55,7 @@ local previewEnabled = true
 local aaEnabled = false
 local isPreviewActive = false
 local lastInteractionTime = 0
-local idleRenderDelay = 0.1
+local idleRenderDelay = usingNative and 0.1 or 0.5
 local needFullRender = false
 
 -- UI state
@@ -108,18 +110,6 @@ local function init_color_table(max_iter)
     color_table_max_iter = max_iter
 end
 
-local function iteratePixel(cr, ci, maxIter)
-    local zr, zi, zr2, zi2, iter = 0, 0, 0, 0, 0
-    while zr2 + zi2 < 4.0 and iter < maxIter do
-        zi = 2.0 * zr * zi + ci
-        zr = zr2 - zi2 + cr
-        zr2 = zr * zr
-        zi2 = zi * zi
-        iter = iter + 1
-    end
-    return iter
-end
-
 local function generateFrameLua(targetData, targetWidth, targetHeight)
     if color_table_max_iter ~= max_iter then
         init_color_table(max_iter)
@@ -135,37 +125,60 @@ local function generateFrameLua(targetData, targetWidth, targetHeight)
 
     local sampleOffset = 0.25
     local lastColorIndex = COLOR_TABLE_SIZE
+    local maxIter = max_iter
+    local invMaxIter = 1.0 / max_iter
+    local iterDiv = (lastColorIndex - 1) * invMaxIter
+    local cr, ci, iter, zr, zi, zr2, zi2, colorIndex
 
     for y = 0, targetHeight - 1 do
         local ciBase = ymin + y * dy
+        local ci1 = ymin + (y + (0 + sampleOffset) * 0.5) * dy
+        local ci2 = ymin + (y + (1 + sampleOffset) * 0.5) * dy
         for x = 0, targetWidth - 1 do
             local accumR, accumG, accumB, sampleCount = 0, 0, 0, 1
-            local iter
 
             if aaEnabled then
                 sampleCount = 4
+                local cr1 = xmin + (x + (0 + sampleOffset) * 0.5) * dx
+                local cr2 = xmin + (x + (1 + sampleOffset) * 0.5) * dx
                 for sy = 0, 1 do
-                    local ci = ymin + (y + (sy + sampleOffset) * 0.5) * dy
+                    ci = sy == 0 and ci1 or ci2
                     for sx = 0, 1 do
-                        local cr = xmin + (x + (sx + sampleOffset) * 0.5) * dx
-                        iter = iteratePixel(cr, ci, max_iter)
-                        local color = color_table[math.min(math.floor(iter / max_iter * (lastColorIndex - 1)) + 1, lastColorIndex)]
+                        cr = sx == 0 and cr1 or cr2
+                        zr, zi, zr2, zi2, iter = 0, 0, 0, 0, 0
+                        while zr2 + zi2 < 4.0 and iter < maxIter do
+                            zi = 2.0 * zr * zi + ci
+                            zr = zr2 - zi2 + cr
+                            zr2 = zr * zr
+                            zi2 = zi * zi
+                            iter = iter + 1
+                        end
+                        colorIndex = math.min(math.floor(iter * iterDiv) + 1, lastColorIndex)
+                        local color = color_table[colorIndex]
                         accumR = accumR + color.r
                         accumG = accumG + color.g
                         accumB = accumB + color.b
                     end
                 end
             else
-                local cr = xmin + x * dx
-                iter = iteratePixel(cr, ciBase, max_iter)
-                local color = color_table[math.min(math.floor(iter / max_iter * (lastColorIndex - 1)) + 1, lastColorIndex)]
+                cr = xmin + x * dx
+                zr, zi, zr2, zi2, iter = 0, 0, 0, 0, 0
+                while zr2 + zi2 < 4.0 and iter < maxIter do
+                    zi = 2.0 * zr * zi + ciBase
+                    zr = zr2 - zi2 + cr
+                    zr2 = zr * zr
+                    zi2 = zi * zi
+                    iter = iter + 1
+                end
+                colorIndex = math.min(math.floor(iter * invMaxIter * (lastColorIndex - 1)) + 1, lastColorIndex)
+                local color = color_table[colorIndex]
                 accumR, accumG, accumB = color.r, color.g, color.b
             end
 
             targetData:setPixel(x, y,
-                accumR / sampleCount / 255,
-                accumG / sampleCount / 255,
-                accumB / sampleCount / 255,
+                accumR * 0.00392156862745098 / sampleCount,
+                accumG * 0.00392156862745098 / sampleCount,
+                accumB * 0.00392156862745098 / sampleCount,
                 1)
         end
     end

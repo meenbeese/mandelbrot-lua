@@ -120,6 +120,12 @@ This project includes several key optimizations to ensure smooth, real-time Mand
 - **Clamped zoom precision:** Prevents zoom from becoming too small due to floating-point limits.
 - **GLSL fragment shader coloring:** Coloring is handled entirely on the GPU for smooth gradients and zero CPU cost.
 - **GPU-accelerated texture rendering:** Fractal data is uploaded to a texture and drawn in one pass for efficiency.
+- **Adaptive preview mode:** A low-resolution render is displayed while panning/zooming, then a full-resolution render kicks in 0.1 s after interaction stops (0.5 s on web).
+- **Optimized pure-Lua fallback (web):** The fallback renderer inlines its per-pixel iteration loop and hoists all loop math into cached locals, minimizing interpreter overhead.
+
+### Web performance
+
+Expect the web build to run slower than desktop — that's inherent to the platform, not a bug. love.js runs plain Lua (no LuaJIT), and the C library cannot come along (no FFI in the browser), so the fractal is computed single-threaded in a Lua interpreter — typically 50–100× slower than native C. To compensate, the web build automatically uses a coarser preview (5× downscale instead of 3×) and delays the idle full-resolution render. For the smoothest navigation, leave **Preview** enabled; the fullscreen render fires shortly after you stop moving.
 
 ---
 
